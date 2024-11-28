@@ -7,7 +7,7 @@ import os
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
-from bounding_box_visualizer import draw_bounding_boxes
+from bounding_box_visualizer import draw_ground_truth_bounding_boxes
 
 
 def initialize_weights(input_dim, reservoir_dim, output_dim, spectral_radius):
@@ -284,21 +284,19 @@ def main():
     plot_confusion_matrix(all_labels, all_predictions, ['Non-Shark', 'Shark'])
 
     # Generate mock predictions for visualization
-    print("Generating bounding box visualizations...")
+    print("Generating ground truth bounding box visualizations...")
     num_images = 20
-    predictions = generate_bounding_box_predictions(test_generator, num_images)
 
-    # Save images with bounding boxes
-    draw_bounding_boxes(
+    draw_ground_truth_bounding_boxes(
         images_dir=test_images_dir,
-        predictions=predictions,
+        labels_dir=test_labels_dir,
         output_dir="output_images",
         img_height=img_height,
         img_width=img_width,
         max_photos=num_images
     )
 
-    print("Bounding box visualizations saved to 'output_images' directory.")
+    print("Ground truth bounding box visualizations saved to 'output_images' directory.")
 
 
 if __name__ == "__main__":
