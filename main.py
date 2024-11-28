@@ -7,6 +7,7 @@ import os
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
+from bounding_box_visualizer import draw_bounding_boxes
 
 
 def initialize_weights(input_dim, reservoir_dim, output_dim, spectral_radius):
@@ -93,7 +94,7 @@ class ImageDataGenerator(Sequence):
         self.img_width = img_width
         self.batch_size = batch_size
         self.num_classes = num_classes
-        self.image_files = sorted(os.listdir(images_dir))
+        self.image_files = sorted(os.listdir(images_dir))  # Use all images
         self.indexes = np.arange(len(self.image_files))
 
     def __len__(self):
@@ -135,7 +136,6 @@ class ImageDataGenerator(Sequence):
         # Shuffle indexes after each epoch if desired
         np.random.shuffle(self.indexes)
 
-
 def plot_confusion_matrix(all_labels, all_predictions, class_names):
     cm = confusion_matrix(all_labels, all_predictions)
     plt.figure(figsize=(8, 6))
@@ -147,13 +147,44 @@ def plot_confusion_matrix(all_labels, all_predictions, class_names):
     plt.show()
 
 
+def generate_bounding_box_predictions(test_generator, num_images):
+    """
+    Generate mock bounding box predictions for test images.
+
+    Args:
+        test_generator: Generator for test data.
+        num_images: Number of images to generate predictions for.
+
+    Returns:
+        List of predictions in the format [[(class_id, x, y, w, h), ...], ...].
+    """
+    predictions = []
+
+    image_count = 0
+    for x_test_batch, y_test_batch in test_generator:
+        batch_size = x_test_batch.shape[0]
+        for i in range(batch_size):
+            if image_count >= num_images:
+                break
+            # Mock prediction: [class_id, center_x, center_y, width, height]
+            class_id = 3 if np.argmax(y_test_batch[i]) == 1 else 0  # 3 for Shark, 0 for Non-Shark
+            bbox = [class_id, 0.5, 0.5, 0.3, 0.3]  # Centered box (mock)
+            predictions.append([bbox])
+            image_count += 1
+        if image_count >= num_images:
+            break
+
+    return predictions
+
+
 def main():
     # Set image dimensions and batch size
     img_height = 128
     img_width = 128
     num_channels = 3
-    batch_size = 64
+    batch_size = 32  # Adjusted batch size for smaller datasets
     num_classes = 2
+    num_epochs = 3  # Fewer epochs for faster testing
 
     # Paths to your dataset directories
     base_dir = os.path.dirname(__file__)
@@ -163,15 +194,13 @@ def main():
     test_images_dir = os.path.join(data_dir, 'test', 'images')
     test_labels_dir = os.path.join(data_dir, 'test', 'labels')
 
-    # Create generators
-    train_generator = ImageDataGenerator(train_images_dir, train_labels_dir, img_height, img_width, batch_size,
-                                         num_classes)
-    test_generator = ImageDataGenerator(test_images_dir, test_labels_dir, img_height, img_width, batch_size,
-                                        num_classes)
+    # Create generators for training and testing
+    train_generator = ImageDataGenerator(train_images_dir, train_labels_dir, img_height, img_width, batch_size, num_classes)
+    test_generator = ImageDataGenerator(test_images_dir, test_labels_dir, img_height, img_width, batch_size, num_classes)
 
-    # Calculate steps per epoch dynamically
-    steps_per_epoch = len(train_generator)  # Number of batches in the training data
-    validation_steps = len(test_generator)  # Number of batches in the test data
+    # Adjust steps per epoch to match the dataset size
+    steps_per_epoch = len(train_generator)
+    validation_steps = len(test_generator)
 
     # Build a pretrained CNN model for feature extraction
     cnn_model = keras.models.Sequential([
@@ -180,12 +209,13 @@ def main():
         keras.layers.GlobalAveragePooling2D()
     ])
 
-    # Determine `input_dim` dynamically
+    # Determine `input_dim` dynamically from the first batch
+    print("Determining input dimensions...")
     for x_train_batch, _ in train_generator:
         try:
             x_train_features_batch = cnn_model.predict(x_train_batch, verbose=0)
             input_dim = x_train_features_batch.shape[1]
-            break  # Only process one batch to determine `input_dim`
+            break
         except Exception as e:
             print(f"Error during feature extraction: {e}")
             continue
@@ -195,7 +225,6 @@ def main():
     output_dim = num_classes
     spectral_radius = 0.8
     leak_rate = 0.2
-    num_epochs = 10
     reg_lambda = 1e-4
     learning_rate = 1e-2
 
@@ -208,9 +237,10 @@ def main():
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
         epoch_accuracy = []
-        batch_count = 0  # Track the number of processed batches
 
-        for x_train_batch, y_train_batch in train_generator:
+        for step, (x_train_batch, y_train_batch) in enumerate(train_generator):
+            if step >= steps_per_epoch:
+                break  # Ensure training doesn't exceed the number of steps
             try:
                 x_train_features_batch = cnn_model.predict(x_train_batch, verbose=0)
 
@@ -220,26 +250,21 @@ def main():
                     leak_rate, reg_lambda, learning_rate
                 )
                 epoch_accuracy.append(batch_accuracy)
-                batch_count += 1
-
-                # Stop processing if steps_per_epoch is reached
-                if batch_count >= steps_per_epoch:
-                    break
             except Exception as e:
                 print(f"Error during training batch: {e}")
                 continue
 
         print(f"Epoch {epoch + 1}/{num_epochs}, Train Accuracy: {np.mean(epoch_accuracy):.4f}")
 
-        # Evaluate the model
+    # Evaluate the model
     print("Evaluating on test data...")
     all_labels = []
     all_predictions = []
 
-    batch_count = 0  # Track processed batches
-    for x_test_batch, y_test_batch in test_generator:
+    for step, (x_test_batch, y_test_batch) in enumerate(test_generator):
+        if step >= validation_steps:
+            break  # Ensure evaluation doesn't exceed the number of steps
         try:
-            print(f"Evaluating batch {batch_count + 1}...")
             x_test_features_batch = cnn_model.predict(x_test_batch, verbose=0)
 
             # Predict with LNN
@@ -248,24 +273,32 @@ def main():
             )
             all_predictions.extend(np.argmax(test_predictions, axis=1))
             all_labels.extend(np.argmax(y_test_batch, axis=1))
-            batch_count += 1
-
-            if batch_count >= validation_steps:
-                break
         except Exception as e:
             print(f"Error during evaluation batch: {e}")
             continue
-
-    # Check if any predictions were made
-    if not all_predictions:
-        print("No predictions were made during evaluation. Check your test data or generator.")
-        return
 
     # Classification report
     print(classification_report(all_labels, all_predictions, target_names=['Non-Shark', 'Shark']))
 
     # Confusion matrix
     plot_confusion_matrix(all_labels, all_predictions, ['Non-Shark', 'Shark'])
+
+    # Generate mock predictions for visualization
+    print("Generating bounding box visualizations...")
+    num_images = 20
+    predictions = generate_bounding_box_predictions(test_generator, num_images)
+
+    # Save images with bounding boxes
+    draw_bounding_boxes(
+        images_dir=test_images_dir,
+        predictions=predictions,
+        output_dir="output_images",
+        img_height=img_height,
+        img_width=img_width,
+        max_photos=num_images
+    )
+
+    print("Bounding box visualizations saved to 'output_images' directory.")
 
 
 if __name__ == "__main__":
