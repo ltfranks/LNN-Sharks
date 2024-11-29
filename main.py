@@ -8,6 +8,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from bounding_box_visualizer import draw_ground_truth_bounding_boxes
+import cv2
 
 
 def initialize_weights(input_dim, reservoir_dim, output_dim, spectral_radius):
@@ -176,11 +177,82 @@ def generate_bounding_box_predictions(test_generator, num_images):
 
     return predictions
 
+def process_video(video_path, output_video_path, cnn_model, reservoir_weights, input_weights, output_weights, leak_rate, img_height, img_width):
+    """
+    Analyze a video frame by frame using the CNN and LNN and save the annotated video.
+
+    Args:
+        video_path (str): Path to the input video.
+        output_video_path (str): Path to save the annotated video.
+        cnn_model (keras.Model): The CNN model for feature extraction.
+        reservoir_weights (np.array): Reservoir weights of the LNN.
+        input_weights (np.array): Input weights of the LNN.
+        output_weights (np.array): Output weights of the LNN.
+        leak_rate (float): Leak rate for the LNN.
+        img_height (int): Height of the video frame for resizing.
+        img_width (int): Width of the video frame for resizing.
+    """
+    cap = cv2.VideoCapture(video_path)
+
+    if not cap.isOpened():
+        print("Error: Could not open video.")
+        return
+
+    # Get video properties
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+
+    # Initialize reservoir state
+    reservoir_state = np.zeros((reservoir_weights.shape[0],))
+
+    frame_count = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Preprocess the frame
+        resized_frame = cv2.resize(frame, (img_width, img_height))
+        normalized_frame = resized_frame / 255.0
+        input_frame = np.expand_dims(normalized_frame, axis=0)
+
+        # Extract features using CNN
+        features = cnn_model.predict(input_frame, verbose=0)
+
+        # Update reservoir state and make prediction
+        reservoir_state = (1 - leak_rate) * reservoir_state + leak_rate * np.tanh(
+            np.dot(input_weights, features[0]) + np.dot(reservoir_weights, reservoir_state)
+        )
+        logits = np.dot(reservoir_state, output_weights)
+        prediction = tf.nn.softmax(logits).numpy()
+        predicted_class = np.argmax(prediction)
+        confidence = prediction[predicted_class]
+
+        # Add label to frame
+        label = f"{'Shark' if predicted_class == 1 else 'Non-Shark'} ({confidence:.2f})"
+        cv2.putText(frame, label, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        # Write annotated frame to output video
+        out.write(frame)
+
+        frame_count += 1
+        if frame_count % 100 == 0:
+            print(f"Processed {frame_count} frames")
+
+    cap.release()
+    out.release()
+    print(f"Processed video saved to {output_video_path}")
+
 
 def main():
     # Set image dimensions and batch size
-    img_height = 128
-    img_width = 128
+    img_height = 256
+    img_width = 256
     num_channels = 3
     batch_size = 32  # Adjusted batch size for smaller datasets
     num_classes = 2
@@ -255,6 +327,15 @@ def main():
                 continue
 
         print(f"Epoch {epoch + 1}/{num_epochs}, Train Accuracy: {np.mean(epoch_accuracy):.4f}")
+
+        # Video Analysis
+    video_path = "sharks.mp4"  # Path to input video
+    output_video_path = "output_video.mp4"  # Path to save annotated video
+
+    print("Analyzing video...")
+    process_video(video_path, output_video_path, cnn_model, reservoir_weights, input_weights, output_weights, leak_rate,
+                  img_height, img_width)
+
 
     # Evaluate the model
     print("Evaluating on test data...")
