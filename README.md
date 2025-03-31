@@ -2,11 +2,11 @@
 
 ![Capture](https://github.com/user-attachments/assets/0787296b-605c-470d-8d40-5bcec76cd4d5)
 
-LNN-Sharks is a project focused on leveraging Liquid Time-Constant Networks (LTCs) to analyze and predict patterns in shark imagery. The repository contains code and resources for processing the SharkSpotting dataset.
+LNN-Sharks is a project focused on Liquid Time-Constant Networks (LTCs) to analyze and predict patterns in shark imagery. The repository contains code and resources for processing the SharkSpotting dataset.
 
 ## Dataset
 
-The SharkSpotting dataset is utilized for training and evaluating models. Key features include:
+The SharkSpotting dataset is utilized to train and evaluate models. Key features include:
 
 - **Total Images**: 6,953 images.
 - **Median Image Dimensions**: 640x640.
