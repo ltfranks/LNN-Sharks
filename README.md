@@ -25,11 +25,3 @@ Access the dataset here: [SharkSpotting Dataset](https://universe.roboflow.com/s
 - `shark_confusion_matrix.png`: Confusion matrix of model predictions.
 - `.idea/`: Project configuration files (specific to JetBrains IDEs).
 
-## Requirements
-
-- Python 3.x
-- Required Python packages are listed in `requirements.txt`. Install them using:
-
-  ```bash
-  pip install -r requirements.txt
-
